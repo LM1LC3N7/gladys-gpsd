@@ -29,7 +29,9 @@ Gladys ⇄ SDK ⇄ src/app.js (GpsdApp)        pace, freshness, status, retries
 - **Bounds**: lines of 16 KiB at most (a longer one is dropped up to its
   newline), 256 KiB/s at most (more closes the connection), 256 satellites
   read per SKY, values out of physical range unknown (never 0).
-- **Pace**: the newest TPV and SKY replace the previous ones; a round
+- **Pace**: the newest TPV and SKY are kept (a TPV value missing from the
+  newest report is taken from one of the same fix at most 3 s old, its age
+  kept); a round
   publishes them at most once per interval (10 s to 15 min, 1 min by default,
   across reconnections too), the first one at once, only what changed (`publishChangedStates`, heartbeat
   1 h). A round without a new report publishes nothing; the reports kept are
@@ -38,6 +40,8 @@ Gladys ⇄ SDK ⇄ src/app.js (GpsdApp)        pace, freshness, status, retries
 - **Privacy**: latitude, longitude (and altitude) rounded to the chosen
   precision before publication; no coordinate in the logs, the status or the
   test button; no position history by default; nothing in `/data`.
+- **Statuses**: at most one per 10 s while connected (the kind of fix is not
+  in the status, only in the test button); failures at once.
 - **Retries**: 5 s doubling up to 5 min, back to 5 s after a connection that
   lived a minute. `getConfig()` failing: retried from 10 s doubling to 5 min.
   Every timer finite, one per flow, all cleared by `stop()`; the wall clock

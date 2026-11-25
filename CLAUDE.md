@@ -53,8 +53,9 @@ scripts/mutants.{mjs,json}        mutation check of the guards (not in the CI, n
   the project is "protocol only").
 - A position is personal data: never log, put in a status, an error or `/data`
   a coordinate; round it before publication (precision option).
-- Only the newest report is kept; a round publishes at most once per interval
-  and never an old report again. Unknown stays unknown (never 0).
+- Only the newest report is kept, its missing TPV values taken from the same
+  fix within 3 s (never across a loss of fix, the age of a carried value kept);
+  a round publishes at most once per interval and never an old report again. Unknown stays unknown (never 0).
 - Monotonic clock only; every timer finite and cleared by `stop()`.
 
 ## Rules

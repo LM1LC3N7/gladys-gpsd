@@ -280,5 +280,23 @@
     "file": "src/devices.js",
     "from": "max: Math.round(LIMITS.SPEED_MAX * 3.6),",
     "to": "max: 100,"
+  },
+  {
+    "name": "tpv: carried into a no-fix TPV",
+    "file": "src/report.js",
+    "from": "const carry = prev && prev.tpv.mode >= MODES.FIX_2D && next.mode >= MODES.FIX_2D;",
+    "to": "const carry = prev && prev.tpv.mode >= MODES.FIX_2D;"
+  },
+  {
+    "name": "tpv: carried age refreshed",
+    "file": "src/report.js",
+    "from": "      at[key] = prev.at[key];\n",
+    "to": "      at[key] = mono;\n"
+  },
+  {
+    "name": "status: mode 0 not refreshed",
+    "file": "src/app.js",
+    "from": "        if (tpv.mode === MODES.UNKNOWN) {\n          this.refreshStatus();\n          return;\n        }",
+    "to": "        if (tpv.mode === MODES.UNKNOWN) {\n          return;\n        }"
   }
 ]

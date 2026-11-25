@@ -876,3 +876,64 @@ test('2D, 3D and DGPS alternating for 5 minutes: one "fixed" status only', async
   await tick();
   assert.equal(ctx.gladys.fake.connectionStatuses.length, before);
 });
+
+test('a no-fix TPV in the 3 s after a full 3D one: no position, no speed published', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const socket = await watching(ctx);
+  socket.send(sky(5, 9));
+  await ctx.clock.advance(0);
+  await tick();
+  socket.send(tpv());
+  await ctx.clock.advance(SECOND);
+  socket.send(tpv({ mode: 1, status: undefined }));
+  await ctx.clock.advance(MINUTE);
+  await tick();
+  assert.equal(statesOf(ctx.gladys, FEATURES.LATITUDE).length, 0);
+  assert.equal(statesOf(ctx.gladys, FEATURES.SPEED).length, 0);
+  assert.deepEqual(
+    statesOf(ctx.gladys, FEATURES.FIX_MODE).map((s) => s.state),
+    [1],
+  );
+});
+
+test('a chain of partial TPV: the course expires 3 s after its last reading', async (t) => {
+  const ctx = await setup({ config: { ...CONFIG, publish_interval: '10' } });
+  t.after(() => ctx.app.stop());
+  const rounds = [];
+  const original = ctx.gladys.publishChangedStates.bind(ctx.gladys);
+  t.mock.method(ctx.gladys, 'publishChangedStates', async (states, options) => {
+    rounds.push(states.map((s) => s.device_feature_external_id.split(':').at(-1)));
+    return original(states, options);
+  });
+  const socket = await watching(ctx);
+  socket.send(tpv({ track: 90, speed: 10 }));
+  await ctx.clock.advance(0);
+  for (let second = 1; second <= 30; second += 1) {
+    await ctx.clock.advance(SECOND);
+    socket.send(tpv({ lat: 48 + second / 1000, track: undefined, speed: undefined }));
+  }
+  await ctx.clock.advance(10 * SECOND);
+  await tick();
+  assert.ok(rounds.length >= 4, `${rounds.length} rounds`);
+  assert.ok(rounds[0].includes(FEATURES.COURSE), 'the full report');
+  for (const round of rounds.slice(1)) {
+    assert.ok(round.includes(FEATURES.LATITUDE), 'the position goes on');
+    assert.ok(!round.includes(FEATURES.COURSE), 'the course is not carried past 3 s');
+    assert.ok(!round.includes(FEATURES.SPEED));
+  }
+});
+
+test('a mode 0 TPV after a silence refreshes the status', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const socket = await watching(ctx);
+  await ctx.clock.advance(TIMEOUTS.PROBE_AFTER + SECOND);
+  socket.send(VERSION);
+  await tick();
+  assert.match(lastStatus(ctx.gladys).message.en, /no report for a minute/);
+  socket.send(tpv({ mode: 0 }));
+  await ctx.clock.advance(INTERVALS.STATUS_MIN_GAP_MS);
+  await tick();
+  assert.match(lastStatus(ctx.gladys).message.en, /waiting for the first report/);
+});

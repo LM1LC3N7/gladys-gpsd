@@ -36,6 +36,8 @@ the notes of the version's GitHub Release.
 - The values of the TPV reports of one fix are merged: a value missing from the
   newest report (gpsd 3.25 sends the course and speed in one report out of two)
   is taken from one at most 3 s old, never across a loss of fix.
+- A carried value keeps the age of its reading (never refreshed by partial
+  reports) and nothing is carried into a no-fix report.
 - The first receiver that reports is released when gpsd deactivates it.
 - Altitude and course keep no history by default either.
 - Docs: what stays shown without a fix, which features keep a history, when

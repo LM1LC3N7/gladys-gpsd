@@ -79,3 +79,21 @@ test('mergeTpv: carries within the age, only between fixes, lat and lon together
   assert.equal(noPos.lat, 48.858370123, 'the position of the same fix');
   assert.equal(mergeTpv(first, readTpv(tpv({ status: undefined })), 10, 3000).tpv.status, null);
 });
+
+test('mergeTpv: a no-fix TPV right after a 3D one takes nothing from it', () => {
+  const first = mergeTpv(null, readTpv(tpv()), 0, 3000);
+  const { tpv: noFix } = mergeTpv(first, readTpv(tpv({ mode: 1 })), 1000, 3000);
+  for (const key of ['lat', 'lon', 'speed', 'track', 'alt', 'eph']) {
+    assert.equal(noFix[key], null, key);
+  }
+});
+
+test('mergeTpv: a carried value keeps the age of its reading and expires after 3 s', () => {
+  let merged = mergeTpv(null, readTpv(tpv({ track: 90 })), 0, 3000);
+  const tracks = [];
+  for (let second = 1; second <= 10; second += 1) {
+    merged = mergeTpv(merged, readTpv(tpv({ track: undefined })), second * 1000, 3000);
+    tracks.push(merged.tpv.track);
+  }
+  assert.deepEqual(tracks, [90, 90, 90, null, null, null, null, null, null, null]);
+});

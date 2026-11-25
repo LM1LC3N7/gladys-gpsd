@@ -28,7 +28,7 @@ const CARRIED = ['lat', 'lon', 'alt', 'speed', 'track', 'eph'];
  * Merges a TPV into the last one (pure). `prev` is `{ tpv, at }`, `at` the
  * monotonic time each value was last given. A value the new TPV lacks is kept
  * from `prev` when given within `maxAgeMs` and both are 2D/3D fixes; the
- * altitude only in 3D; latitude and longitude only together. The status is
+ * altitude only in 3D. The status is
  * never carried (absent means "normal" in gpsd). -> { tpv, at }.
  */
 export function mergeTpv(prev, next, mono, maxAgeMs) {
@@ -52,10 +52,8 @@ export function mergeTpv(prev, next, mono, maxAgeMs) {
       at[key] = null;
     }
   }
-  if (tpv.lat === null || tpv.lon === null) {
-    tpv.lat = null;
-    tpv.lon = null;
-  }
+  // Latitude and longitude come together (readTpv gives both or neither), so
+  // they are given, and carried, together.
   return { tpv, at };
 }
 

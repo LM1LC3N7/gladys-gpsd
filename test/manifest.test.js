@@ -188,13 +188,11 @@ test('features: read only, no switch, pairs and units of the core; keys fixed', 
     features.map((f) => f.external_id.split(':').at(-1)).sort(),
     Object.values(FEATURES).sort(),
   );
-  const position = features.filter((f) =>
-    ['latitude', 'longitude'].includes(f.external_id.split(':').at(-1)),
-  );
-  assert.ok(
-    position.every((f) => f.keep_history === false),
-    'no position history by default',
-  );
+  const noHistory = ['latitude', 'longitude', 'altitude', 'course', 'fix'];
+  for (const feature of features) {
+    const key = feature.external_id.split(':').at(-1);
+    assert.equal(feature.keep_history, !noHistory.includes(key), `${key}: history`);
+  }
 });
 
 test('supported_options: the rules of the core on every published one (none today)', () => {
