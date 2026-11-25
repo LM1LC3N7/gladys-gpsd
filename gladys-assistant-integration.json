@@ -1,177 +1,100 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "gpsd",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Position, speed and fix of a GNSS receiver shared by gpsd (camper van, boat).",
+    "fr": "Position, vitesse et fix d'un récepteur GNSS partagé par gpsd (camping-car, bateau)."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-gpsd:0.1.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-gpsd/main/cover.png",
+  "categories": ["vehicles", "network"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": { "en": "How it works", "fr": "Fonctionnement" },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "gpsd is the service that reads a GPS / GNSS receiver (USB or serial) and shares it on the network, on TCP port 2947. Gladys connects to it, reads its reports (gpsd JSON protocol) and turns them into one device (Discovery tab): latitude, longitude, speed, altitude, course, fix, horizontal error and satellites. Read only: nothing is ever sent to the receiver. gpsd must listen on the network (option -G) and be reachable from Gladys. A position is personal data: it is rounded as chosen below, never written in the logs, and kept without history by default. Unofficial integration, not affiliated with the GPSD project.",
+        "fr": "gpsd est le service qui lit un récepteur GPS / GNSS (USB ou série) et le partage sur le réseau, sur le port TCP 2947. Gladys s'y connecte, lit ses rapports (protocole JSON de gpsd) et en fait un appareil (onglet Découverte) : latitude, longitude, vitesse, altitude, cap, fix, erreur horizontale et satellites. Lecture seule : rien n'est jamais envoyé au récepteur. gpsd doit écouter sur le réseau (option -G) et être joignable depuis Gladys. Une position est une donnée personnelle : elle est arrondie selon le choix ci-dessous, jamais écrite dans les journaux, et gardée sans historique par défaut. Intégration non officielle, sans lien avec le projet GPSD."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://gpsd.gitlab.io/gpsd/gpsd_json.html",
+          "label": { "en": "gpsd JSON protocol", "fr": "Protocole JSON de gpsd" }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
+      "key": "host",
+      "type": "string",
+      "label": { "en": "gpsd address", "fr": "Adresse de gpsd" },
       "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+        "en": "Name or IP address of the machine running gpsd, followed by :port if gpsd does not listen on 2947.",
+        "fr": "Nom ou adresse IP de la machine qui fait tourner gpsd, suivi de :port si gpsd n'écoute pas sur 2947."
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "placeholder": { "en": "e.g. 192.168.1.40", "fr": "ex. 192.168.1.40" },
+      "required": true
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
+      "key": "receiver",
+      "type": "string",
+      "label": { "en": "Receiver (optional)", "fr": "Récepteur (facultatif)" },
       "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+        "en": "Only when gpsd reads several receivers: the path of the one to follow, as gpsd names it. Empty: the first receiver that reports.",
+        "fr": "Seulement si gpsd lit plusieurs récepteurs : le chemin de celui à suivre, tel que gpsd le nomme. Vide : le premier récepteur qui envoie un rapport."
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "placeholder": { "en": "e.g. /dev/ttyACM0", "fr": "ex. /dev/ttyACM0" },
+      "required": false
     },
     {
-      "key": "unit",
+      "key": "publish_interval",
       "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
-      "required": false,
-      "default": "celsius",
+      "label": { "en": "Publication", "fr": "Publication" },
+      "description": {
+        "en": "gpsd reports about once a second; Gladys keeps the newest report and publishes at most at this pace, only the values that changed.",
+        "fr": "gpsd envoie environ un rapport par seconde ; Gladys garde le plus récent et publie au plus à ce rythme, seulement les valeurs qui ont changé."
+      },
+      "required": true,
+      "default": "60",
       "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
+        { "value": "10", "label": { "en": "Every 10 seconds", "fr": "Toutes les 10 secondes" } },
+        { "value": "30", "label": { "en": "Every 30 seconds", "fr": "Toutes les 30 secondes" } },
+        { "value": "60", "label": { "en": "Every minute", "fr": "Toutes les minutes" } },
+        { "value": "300", "label": { "en": "Every 5 minutes", "fr": "Toutes les 5 minutes" } },
+        { "value": "900", "label": { "en": "Every 15 minutes", "fr": "Toutes les 15 minutes" } }
       ]
     },
     {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "key": "precision",
+      "type": "select",
+      "label": { "en": "Position precision", "fr": "Précision de la position" },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "Latitude and longitude are rounded before they reach Gladys (the altitude too). Coarser keeps your exact position private.",
+        "fr": "La latitude et la longitude sont arrondies avant d'arriver dans Gladys (l'altitude aussi). Plus grossier garde votre position exacte privée."
       },
-      "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "required": true,
+      "default": "4",
+      "options": [
+        { "value": "5", "label": { "en": "About 1 m", "fr": "Environ 1 m" } },
+        { "value": "4", "label": { "en": "About 10 m", "fr": "Environ 10 m" } },
+        { "value": "3", "label": { "en": "About 100 m", "fr": "Environ 100 m" } },
+        { "value": "2", "label": { "en": "About 1 km", "fr": "Environ 1 km" } }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
-      "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
-    }
-  ],
-  "scene_triggers": [
-    {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
+      "key": "test_connection",
+      "label": { "en": "Test the connection", "fr": "Tester la connexion" },
       "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
+        "en": "Tells the state of the gpsd connection: version, fix, satellites, other receivers seen. Never a coordinate; no new connection.",
+        "fr": "Donne l'état de la connexion à gpsd : version, fix, satellites, autres récepteurs vus. Jamais une coordonnée ; aucune nouvelle connexion."
       },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
-        }
-      ],
-      "variables": [
-        {
-          "key": "target",
-          "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
-      },
-      "timeout_seconds": 15,
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
-        {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
-        }
-      ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
+      "timeout_seconds": 10
     }
   ]
 }

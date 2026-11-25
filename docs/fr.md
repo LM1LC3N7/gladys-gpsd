@@ -1,67 +1,91 @@
-# Template de démonstration
+# gpsd
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Affiche dans Gladys la position d'un récepteur GPS / GNSS partagé par
+[gpsd](https://gpsd.io) : camping-car, bateau, cabane, mât météo. gpsd lit le
+récepteur (USB ou série) sur sa propre machine et partage ses rapports sur le
+réseau ; cette intégration s'y connecte en TCP et les lit. Elle ne touche ni à
+l'USB ni à un port série, et n'envoie jamais rien au récepteur.
+
+> Cette intégration n'a jamais été testée avec un vrai récepteur : elle a été
+> testée avec gpsd 3.25 et `gpsfake` rejouant un journal NMEA. Vos retours sont
+> les bienvenus.
 
 ## Ce que vous obtenez
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+Un appareil par adresse de gpsd (onglet Découverte), en lecture seule :
+
+| Fonction            | Unité / valeurs                                            |
+| ------------------- | ---------------------------------------------------------- |
+| Latitude            | degrés, arrondie (voir Précision)                          |
+| Longitude           | degrés, arrondie (voir Précision)                          |
+| Vitesse             | km/h, au dixième                                           |
+| Altitude            | mètres au-dessus du niveau de la mer, fix 3D seulement     |
+| Cap                 | degrés depuis le nord vrai, au-dessus de 2 km/h            |
+| Mode du fix         | 1 pas de fix, 2 2D, 3 3D                                   |
+| Fix                 | texte : `no fix`, `2D`, `3D`, `3D DGPS`, `3D RTK fixed`... |
+| Erreur horizontale  | mètres, estimée par gpsd                                   |
+| Satellites utilisés | nombre                                                     |
+| Satellites vus      | nombre                                                     |
+
+Une valeur que gpsd ne donne pas reste inconnue (jamais 0). Sans fix, seuls le
+mode et le texte du fix sont publiés, jamais une position.
+
+## Avant de commencer
+
+- gpsd doit écouter sur le réseau : lancez-le avec `-G` (sur Debian,
+  `GPSD_OPTIONS="-G"` dans `/etc/default/gpsd`, et pour un gpsd activé par
+  socket `ListenStream=0.0.0.0:2947` dans `gpsd.socket`). Vérifiez avec
+  `gpspipe -w <adresse>` depuis une autre machine.
+- Le port TCP 2947 (ou le vôtre) doit être joignable depuis Gladys. gpsd n'a
+  pas de mot de passe : gardez-le sur votre réseau local, ne l'ouvrez pas sur
+  internet.
 
 ## Configuration
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+- **Adresse de gpsd** : nom ou adresse IP de la machine de gpsd, `:port` si ce
+  n'est pas 2947 (IPv6 entre crochets : `[fd00::12]:2947`).
+- **Récepteur** (facultatif) : seulement si gpsd lit plusieurs récepteurs, le
+  chemin de celui à suivre tel que gpsd le nomme (`/dev/ttyACM0`). Vide : le
+  premier qui envoie un rapport. Le statut liste les autres.
+- **Publication** : gpsd envoie environ un rapport par seconde ; l'intégration
+  garde le plus récent et publie au plus toutes les 10 s, 30 s, 1 min (par
+  défaut), 5 min ou 15 min, seulement les valeurs qui ont changé (une valeur
+  inchangée est renvoyée une fois par heure). Le premier rapport est publié tout
+  de suite, sauf si une publication est partie il y a moins d'un intervalle.
+- **Précision de la position** : environ 1 m (5 décimales), 10 m (4, par
+  défaut), 100 m (3) ou 1 km (2). L'altitude suit (0,1 m, 1 m, 10 m, 100 m).
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+## Vie privée
 
-## Actions
+Une position est une donnée personnelle. Elle est arrondie avant d'arriver dans
+Gladys, n'est écrite ni dans les journaux, ni dans le statut, ni dans la réponse
+du bouton de test. Latitude, longitude et texte du fix sont gardés sans
+historique par défaut ; vous pouvez l'activer fonction par fonction dans
+Gladys.
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+## Statut et bouton de test
 
-## Scènes
+L'écran de configuration montre l'état de la connexion : connecté avec un fix
+2D / 3D, pas encore de fix, aucun récepteur actif, un récepteur choisi qui
+n'envoie rien, aucun rapport depuis une minute, ou la raison d'un échec (refus,
+nom inconnu, injoignable, pas gpsd, autre version du protocole, gpsd ne répond
+plus). Une connexion perdue est réessayée après 5 s, puis 10, 20... jusqu'à
+5 minutes. Le bouton **Tester la connexion** donne le même état avec les
+satellites et le rythme ; il n'ouvre jamais de nouvelle connexion.
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+## Fonctionnement
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+L'intégration lit la bannière de gpsd (`VERSION`, protocole 3), demande
+`?WATCH={"enable":true,"json":true};` (rapports JSON seulement, jamais de NMEA),
+et lit les objets `TPV` (position, vitesse, fix), `SKY` (satellites) et
+`DEVICE(S)` (récepteurs). Une connexion muette depuis une minute reçoit
+`?VERSION;` ; sans réponse sous 10 s, elle est fermée puis réessayée. Les lignes
+sont bornées (16 Kio), le débit aussi (256 Kio/s).
 
-## Tableau de bord
+## Identité de l'appareil
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+L'identifiant de l'appareil est une empreinte de l'adresse de gpsd
+(`hôte:port`) : une autre adresse fait un autre appareil ; un récepteur branché
+sur un autre port USB reste le même appareil.
 
-## Dépannage
-
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+Intégration non officielle, sans lien avec le projet GPSD.

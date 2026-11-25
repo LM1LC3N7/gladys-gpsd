@@ -16,8 +16,8 @@ its only runtime dependency. It started from the official JavaScript template.
 ```bash
 npm install
 npm test                                  # node --test, the built-in runner
-node --test test/devices.test.js          # one file
-node --test --test-name-pattern "plug"    # tests whose name matches
+node --test test/app.test.js              # one file
+node --test --test-name-pattern "pace"    # tests whose name matches
 npm run lint                              # ESLint
 npm run format:check                      # Prettier, as the CI runs it
 npm run format                            # Prettier, fix in place
@@ -31,18 +31,31 @@ pushing.
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
-src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
-gladys-assistant-integration.json manifest: name, config_schema, actions, image...
+index.js                          SDK wiring only (src/handlers.js registers every handler before connect())
+src/app.js                        GpsdApp: one gpsd connection, pace of the publications, status, retries
+src/gpsd/session.js               one TCP connection: VERSION banner, ?WATCH, probe after a silence, bounds
+src/gpsd/parse.js                 gpsd JSON objects (TPV, SKY, DEVICE(S), ERROR, VERSION) -> plain values
+src/report.js                     reports -> states (rounding of the position, units)
+src/devices.js                    the device (pure); never fewer features than the created one
+src/config.js                     DEFAULTS (mirror the manifest) + normalization of the address and receiver
+src/i18n.js                       status and test-button texts (en, fr), never a coordinate
+gladys-assistant-integration.json manifest
 docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
+test/                             node --test: fake Gladys, scripted gpsd socket, kit (TCP fakes, clocks)
+scripts/mutants.{mjs,json}        mutation check of the guards (not in the CI, not in the image)
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
+
+## gpsd specifics
+
+- Written from the official "gpsd JSON protocol" document only: never copy nor
+  port code of gpsd or of its client libraries (BSD-2-Clause, but the rule of
+  the project is "protocol only").
+- A position is personal data: never log, put in a status, an error or `/data`
+  a coordinate; round it before publication (precision option).
+- Only the newest report is kept; a round publishes at most once per interval
+  and never an old report again. Unknown stays unknown (never 0).
+- Monotonic clock only; every timer finite and cleared by `stop()`.
 
 ## Rules
 
@@ -58,7 +71,7 @@ test/                             node --test, against the SDK's fake Gladys (in
   one, `0`/`0` for a feature without a range (text, image...). A missing one
   can pass the publication on a core that does not check it, then fail when
   the user clicks "Add" (HTTP 422 `t_device_feature.min cannot be null`). The
-  SDK's fake Gladys refuses it on publication, and `test/devices.test.js`
+  SDK's fake Gladys refuses it on publication, and `test/manifest.test.js`
   checks them.
 - **The container rootfs is read-only.** Write only under `/data`, the one
   writable volume. Never log tokens, passwords or API keys.

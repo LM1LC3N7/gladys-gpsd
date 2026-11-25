@@ -1,0 +1,200 @@
+[
+  {
+    "name": "flood: no byte budget",
+    "file": "src/gpsd/session.js",
+    "from": "if (this.windowBytes > LIMITS.BYTES_PER_SECOND) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "lines: no length bound",
+    "file": "src/gpsd/session.js",
+    "from": "if (this.skipping || this.size + piece.length > this.maxBytes) {",
+    "to": "if (this.skipping) {"
+  },
+  {
+    "name": "hello: protocol major not checked",
+    "file": "src/gpsd/session.js",
+    "from": "if (version.protoMajor !== 3) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "hello: any first line accepted",
+    "file": "src/gpsd/session.js",
+    "from": "      if (!version) {\n        this.end('not_gpsd');\n        return;\n      }\n",
+    "to": "      if (!version) return;\n"
+  },
+  {
+    "name": "hello: no banner timeout",
+    "file": "src/gpsd/session.js",
+    "from": "      this.arm(TIMEOUTS.HELLO, () => this.end('not_gpsd'));\n",
+    "to": ""
+  },
+  {
+    "name": "connect: no timeout",
+    "file": "src/gpsd/session.js",
+    "from": "    this.arm(TIMEOUTS.CONNECT, () => this.end('timeout'));\n",
+    "to": ""
+  },
+  {
+    "name": "probe: never sent",
+    "file": "src/gpsd/session.js",
+    "from": "if (now - this.lastLineAt < TIMEOUTS.PROBE_AFTER) {",
+    "to": "if (true) {"
+  },
+  {
+    "name": "probe: unanswered kept open",
+    "file": "src/gpsd/session.js",
+    "from": "this.arm(TIMEOUTS.PROBE_ANSWER, () => this.end('silent'));",
+    "to": "this.arm(TIMEOUTS.PROBE_ANSWER, () => {});"
+  },
+  {
+    "name": "parse: latitude range",
+    "file": "src/gpsd/parse.js",
+    "from": "const lat = fix ? inRange(obj.lat, -90, 90) : null;",
+    "to": "const lat = fix && isNumber(obj.lat) ? obj.lat : null;"
+  },
+  {
+    "name": "parse: position without a fix",
+    "file": "src/gpsd/parse.js",
+    "from": "const fix = mode >= MODES.FIX_2D;",
+    "to": "const fix = true;"
+  },
+  {
+    "name": "parse: altitude in 2D",
+    "file": "src/gpsd/parse.js",
+    "from": "hasPosition && mode === MODES.FIX_3D",
+    "to": "hasPosition"
+  },
+  {
+    "name": "parse: altHAE taken",
+    "file": "src/gpsd/parse.js",
+    "from": "const altRaw = isNumber(obj.altMSL) ? obj.altMSL : obj.alt;",
+    "to": "const altRaw = obj.altHAE ?? obj.altMSL;"
+  },
+  {
+    "name": "parse: speed range",
+    "file": "src/gpsd/parse.js",
+    "from": "speed: hasPosition ? inRange(obj.speed, 0, LIMITS.SPEED_MAX) : null,",
+    "to": "speed: hasPosition ? obj.speed ?? null : null,"
+  },
+  {
+    "name": "parse: satellites unbounded",
+    "file": "src/gpsd/parse.js",
+    "from": "obj.satellites.slice(0, LIMITS.SATELLITES)",
+    "to": "obj.satellites"
+  },
+  {
+    "name": "parse: control characters kept",
+    "file": "src/gpsd/parse.js",
+    "from": "    .replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/g, ' ')\n",
+    "to": ""
+  },
+  {
+    "name": "report: no rounding",
+    "file": "src/report.js",
+    "from": "put(FEATURES.LATITUDE, roundTo(tpv.lat, decimals));",
+    "to": "put(FEATURES.LATITUDE, tpv.lat);"
+  },
+  {
+    "name": "report: altitude not rounded with the precision",
+    "file": "src/report.js",
+    "from": "roundTo(tpv.alt, decimals - 4)",
+    "to": "roundTo(tpv.alt, 1)"
+  },
+  {
+    "name": "report: course when still",
+    "file": "src/report.js",
+    "from": "kmh >= LIMITS.COURSE_MIN_SPEED",
+    "to": "kmh >= 0"
+  },
+  {
+    "name": "app: no pace",
+    "file": "src/app.js",
+    "from": ": Math.min(interval, Math.max(0, this.lastPublishAt + interval - mono));",
+    "to": ": 0;"
+  },
+  {
+    "name": "app: reports kept after the end",
+    "file": "src/app.js",
+    "from": "    this.clearTimer('publishTimer');\n    this.resetReports();\n    this.failures = lived",
+    "to": "    this.clearTimer('publishTimer');\n    this.failures = lived"
+  },
+  {
+    "name": "app: reports kept after a target change",
+    "file": "src/app.js",
+    "from": "    this.clearTimer('publishTimer');\n    this.resetReports();\n  }\n",
+    "to": "    this.clearTimer('publishTimer');\n  }\n"
+  },
+  {
+    "name": "app: backoff never reset",
+    "file": "src/app.js",
+    "from": "this.failures = lived ? 1 : this.failures + 1;",
+    "to": "this.failures += 1;"
+  },
+  {
+    "name": "app: backoff never doubles",
+    "file": "src/app.js",
+    "from": "const delay = backoff(this.failures, INTERVALS.RETRY_MIN_MS, INTERVALS.RETRY_MAX_MS);",
+    "to": "const delay = INTERVALS.RETRY_MIN_MS;"
+  },
+  {
+    "name": "app: any receiver followed",
+    "file": "src/app.js",
+    "from": "    if (path === wanted) return true;\n",
+    "to": "    return true;\n"
+  },
+  {
+    "name": "app: mode 0 published",
+    "file": "src/app.js",
+    "from": "if (tpv.mode === MODES.UNKNOWN) return;",
+    "to": ""
+  },
+  {
+    "name": "app: unplugged receiver's fix kept",
+    "file": "src/app.js",
+    "from": "          this.pendingTpv = null;\n          this.pendingSky = null;\n        }\n",
+    "to": "        }\n"
+  },
+  {
+    "name": "app: getConfig never retried",
+    "file": "src/app.js",
+    "from": "if (gen === this.gen && !this.stopped) this.startFromGladys();",
+    "to": ""
+  },
+  {
+    "name": "app: same target reconnects",
+    "file": "src/app.js",
+    "from": "if (!running || !sameTarget(previous, config)) {",
+    "to": "if (true) {"
+  },
+  {
+    "name": "app: stop leaves the retry",
+    "file": "src/app.js",
+    "from": "    this.clearTimer('configTimer');\n    this.clearTimer('retryTimer');\n    this.clearTimer('publishTimer');\n    this.stopSession();\n    await",
+    "to": "    this.clearTimer('configTimer');\n    this.clearTimer('publishTimer');\n    this.stopSession();\n    await"
+  },
+  {
+    "name": "app: a status per message",
+    "file": "src/app.js",
+    "from": "if (this.status.key === key) return;",
+    "to": ""
+  },
+  {
+    "name": "app: partial SKY erases the count",
+    "file": "src/app.js",
+    "from": "seen: sky.seen ?? before?.seen ?? null,",
+    "to": "seen: sky.seen,"
+  },
+  {
+    "name": "config: multicast accepted",
+    "file": "src/config.js",
+    "from": "if (a >= 224) return true; // multicast and reserved, broadcast included",
+    "to": ""
+  },
+  {
+    "name": "config: quote in the receiver",
+    "file": "src/config.js",
+    "from": " || /[\"\\\\]/.test(raw)",
+    "to": ""
+  }
+]

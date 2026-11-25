@@ -1,45 +1,104 @@
 // -----------------------------------------------------------------------------
-// Integration configuration.
-//
-// The configuration is filled in by the user in Gladys, from the `config_schema`
-// declared in `gladys-assistant-integration.json`. The SDK fetches it for you
-// (`gladys.getConfig()`) and notifies you of every change through
-// `gladys.onConfigUpdated()`.
-//
-// This module only provides defaults and normalizes the received object, so the
-// rest of the code never has to deal with `undefined`.
+// The configuration the user fills (manifest `config_schema`), normalized.
 // -----------------------------------------------------------------------------
 
-// Defaults: they MUST stay consistent with the `default` values declared in the
-// `config_schema` of the manifest.
-export const DEFAULT_CONFIG = {
-  latitude: 48.8566, // Paris
-  longitude: 2.3522,
-  unit: 'celsius', // 'celsius' | 'fahrenheit'
-  // Seconds between two reads of the polled sensors. Gladys polls at most once
-  // a minute: slower intervals are applied by skipping polls (see
-  // createPoller in src/devices/index.js).
-  poll_frequency: 300,
-  // Reserved key (NOT in config_schema): because the manifest declares both
-  // 'local' and 'cloud' in its `transports` field, Gladys shows a standard
-  // "Prefer the local connection" toggle and sends the user's choice here.
-  // Read-only for the integration; defaults to true.
-  GLADYS_PREFER_LOCAL: true,
-};
+import { isIP } from 'node:net';
+import { DEFAULT_PORT, LIMITS, PRECISIONS, PUBLISH_INTERVALS } from './constants.js';
+
+// Defaults: they MUST match the `default` values of the manifest.
+export const DEFAULTS = Object.freeze({
+  publish_interval: '60',
+  precision: '4',
+});
+
+const text = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const HOSTNAME =
+  /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+
+/** Addresses that are never one machine: any, broadcast, multicast. */
+function isNeverAHost(ip) {
+  const v = isIP(ip);
+  if (v === 4) {
+    const [a, b, c, d] = ip.split('.').map(Number);
+    if (a === 0) return true;
+    if (a >= 224) return true; // multicast and reserved, broadcast included
+    return a === 255 && b === 255 && c === 255 && d === 255;
+  }
+  if (v === 6) {
+    const lower = ip.toLowerCase();
+    return lower === '::' || lower.startsWith('ff');
+  }
+  return false;
+}
 
 /**
- * Merge the user config with the defaults.
- * @param {Record<string, unknown>} raw config returned by the SDK
+ * The gpsd address: `host`, `host:port`, `[ipv6]`, `[ipv6]:port` or a bare
+ * IPv6. -> { host, port } | { error: 'missing' | 'invalid' }.
  */
+export function parseAddress(value) {
+  const raw = text(value);
+  if (!raw) return { error: 'missing' };
+  if (raw.length > 270 || /[^\x21-\x7e]/.test(raw)) return { error: 'invalid' };
+  let host = raw;
+  let portText = null;
+  const bracket = /^\[([^\]]+)\](?::(\d{1,5}))?$/.exec(raw);
+  if (bracket) {
+    host = bracket[1];
+    portText = bracket[2] ?? null;
+    if (isIP(host) !== 6) return { error: 'invalid' };
+  } else if (isIP(raw) === 6) {
+    host = raw;
+  } else {
+    const colon = /^([^:]+):(\d{1,5})$/.exec(raw);
+    if (colon) {
+      host = colon[1];
+      portText = colon[2];
+    } else if (raw.includes(':')) {
+      return { error: 'invalid' };
+    }
+    if (isIP(host) !== 4 && !HOSTNAME.test(host)) return { error: 'invalid' };
+    // Four numbers that are not an IPv4 address (999.1.1.1): a typing error.
+    if (isIP(host) !== 4 && /^[0-9.]+$/.test(host)) return { error: 'invalid' };
+  }
+  if (isNeverAHost(host)) return { error: 'invalid' };
+  const port = portText === null ? DEFAULT_PORT : Number(portText);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return { error: 'invalid' };
+  return { host: host.toLowerCase(), port };
+}
+
+/**
+ * The receiver path (`/dev/ttyACM0`), empty for "the first one gpsd reports".
+ * Compared with the `device` of the reports (never sent: a request of gpsd
+ * is at most 80 characters, too short for a `/dev/serial/by-id/` path).
+ * Printable ASCII without `"` or `\`.
+ * -> { receiver: string | null } | { error: 'invalid' }.
+ */
+export function parseReceiver(value) {
+  const raw = text(value);
+  if (!raw) return { receiver: null };
+  if (raw.length > LIMITS.PATH_CHARS || !/^[\x21-\x7e]+$/.test(raw) || /["\\]/.test(raw)) {
+    return { error: 'invalid' };
+  }
+  return { receiver: raw };
+}
+
 export function normalizeConfig(raw = {}) {
+  raw = raw ?? {};
+  const pick = (key, list) => (list.includes(String(raw[key])) ? String(raw[key]) : DEFAULTS[key]);
+  const address = parseAddress(raw.host);
+  const receiver = parseReceiver(raw.receiver);
   return {
-    ...DEFAULT_CONFIG,
-    ...raw,
-    // Force the types: config may arrive as strings from a form.
-    latitude: Number(raw.latitude ?? DEFAULT_CONFIG.latitude),
-    longitude: Number(raw.longitude ?? DEFAULT_CONFIG.longitude),
-    poll_frequency: Number(raw.poll_frequency ?? DEFAULT_CONFIG.poll_frequency),
-    // The preference is a boolean; anything but an explicit false means true.
-    GLADYS_PREFER_LOCAL: raw.GLADYS_PREFER_LOCAL !== false,
+    host: address.error ? null : address.host,
+    port: address.error ? null : address.port,
+    addressError: address.error ?? null,
+    receiver: receiver.error ? null : receiver.receiver,
+    receiverInvalid: Boolean(receiver.error),
+    publishSeconds: Number(pick('publish_interval', PUBLISH_INTERVALS)),
+    decimals: Number(pick('precision', PRECISIONS)),
   };
 }
+
+/** Same gpsd target (a change of these starts a new connection). */
+export const sameTarget = (a, b) =>
+  Boolean(a && b) && a.host === b.host && a.port === b.port && a.receiver === b.receiver;
