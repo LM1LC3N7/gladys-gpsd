@@ -1,6 +1,6 @@
 {
   "name": "gladys-gpsd",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Gladys Assistant external integration for gpsd: the position, speed, altitude, fix and satellites of a GNSS receiver shared by gpsd on the local network (camper van, boat), read only, through the gpsd JSON protocol over TCP. Unofficial, not affiliated with the GPSD project.",
   "type": "module",

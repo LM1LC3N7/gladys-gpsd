@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-25
+
 ### Added
 
 - First version, never tested with a real receiver (tested with gpsd 3.25 and
@@ -44,4 +46,5 @@ the notes of the version's GitHub Release.
   the status lists other receivers, the `gpsd.socket` drop-in.
 - CI: `timeout-minutes` on every workflow job.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-gpsd/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-gpsd/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-gpsd/releases/tag/v0.1.1

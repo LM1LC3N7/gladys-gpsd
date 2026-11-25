@@ -6,8 +6,8 @@
     "en": "Position, speed and fix of a GNSS receiver shared by gpsd (camper van, boat).",
     "fr": "Position, vitesse et fix d'un récepteur GNSS partagé par gpsd (camping-car, bateau)."
   },
-  "version": "0.1.0",
-  "docker_image": "ghcr.io/lm1lc3n7/gladys-gpsd:0.1.0",
+  "version": "0.1.1",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-gpsd:0.1.1",
   "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-gpsd/main/cover.png",
   "categories": ["vehicles", "network"],
