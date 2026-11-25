@@ -60,6 +60,7 @@ test('TPV: altitude only in 3D, from altMSL, else the old alt', () => {
   assert.equal(readTpv(tpv({ mode: 2 })).alt, null);
   assert.equal(readTpv(tpv({ altMSL: undefined, alt: 12 })).alt, 12);
   assert.equal(readTpv(tpv({ altMSL: undefined })).alt, null, 'altHAE is not the altitude shown');
+  assert.equal(readTpv(tpv({ altMSL: 35, alt: 80 })).alt, 35, 'altMSL first');
   assert.equal(readTpv(tpv({ altMSL: 60_000 })).alt, null);
 });
 
@@ -107,6 +108,7 @@ test('SKY: from the satellites list (bounded), else uSat / nSat; DOPs only: noth
   assert.deepEqual(readSky({ class: 'SKY', uSat: 5, nSat: 9 }), { path: null, used: 5, seen: 9 });
   assert.deepEqual(readSky({ class: 'SKY', uSat: 5 }), { path: null, used: 5, seen: null });
   assert.equal(readSky({ class: 'SKY', hdop: 1.2 }), null);
+  assert.deepEqual(readSky({ class: 'SKY', uSat: 9, nSat: 5 }), { path: null, used: 9, seen: 9 });
   assert.equal(readSky({ class: 'SKY', uSat: -1, nSat: 1.5 }), null);
   const huge = readSky(sky(1000, 1000));
   assert.equal(huge.seen, 256);

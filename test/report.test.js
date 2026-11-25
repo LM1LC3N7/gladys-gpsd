@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FEATURES } from '../src/constants.js';
 import { readSky, readTpv } from '../src/gpsd/parse.js';
-import { buildStates, fixText, roundTo } from '../src/report.js';
+import { buildStates, fixText, mergeTpv, roundTo } from '../src/report.js';
 import { sky, tpv } from './helpers/gpsd.js';
 
 const ids = { feature: (key) => `f:${key}` };
@@ -62,4 +62,20 @@ test('only what is known: sky alone, nothing at all', () => {
   assert.deepEqual(buildStates(ids, { tpv: readTpv(tpv({ mode: 0 })) }, 4), []);
   const noFix = asMap(buildStates(ids, { tpv: readTpv(tpv({ mode: 1 })) }, 4));
   assert.deepEqual(noFix, { fix_mode: 1, fix: 'no fix' });
+});
+
+test('mergeTpv: carries within the age, only between fixes, lat and lon together', () => {
+  const full = readTpv(tpv());
+  const partial = readTpv(tpv({ track: undefined, speed: undefined }));
+  const first = mergeTpv(null, full, 0, 3000);
+  const kept = mergeTpv(first, partial, 1000, 3000).tpv;
+  assert.equal(kept.track, 123.4);
+  assert.equal(kept.speed, 5);
+  const old = mergeTpv(first, partial, 3001, 3000).tpv;
+  assert.equal(old.track, null);
+  const lost = mergeTpv(first, readTpv(tpv({ mode: 1 })), 10, 3000);
+  assert.equal(mergeTpv(lost, partial, 20, 3000).tpv.track, null);
+  const noPos = mergeTpv(first, readTpv(tpv({ lat: undefined })), 10, 3000).tpv;
+  assert.equal(noPos.lat, 48.858370123, 'the position of the same fix');
+  assert.equal(mergeTpv(first, readTpv(tpv({ status: undefined })), 10, 3000).tpv.status, null);
 });

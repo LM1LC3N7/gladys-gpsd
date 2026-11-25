@@ -5,7 +5,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FEATURES, INTERVALS, TIMEOUTS } from '../src/constants.js';
+import { FEATURES, INTERVALS, LIMITS, TIMEOUTS } from '../src/constants.js';
+import { buildDevice } from '../src/devices.js';
+import { readSky, readTpv } from '../src/gpsd/parse.js';
+import { buildStates } from '../src/report.js';
 import { PATH, VERSION, devices, sky, tpv } from './helpers/gpsd.js';
 import { CONFIG, F, MINUTE, SECOND, lastStatus, setup, statesOf, tick } from './helpers/app.js';
 
@@ -54,7 +57,8 @@ test('the first fix is published at once, rounded; unknown values stay unknown',
   assert.equal(statesOf(ctx.gladys, FEATURES.FIX).at(-1).text, '3D DGPS');
   assert.equal(valueOf(ctx.gladys, FEATURES.SATELLITES_USED), 7);
   assert.equal(valueOf(ctx.gladys, FEATURES.SATELLITES_SEEN), 11);
-  assert.match(lastStatus(ctx.gladys).message.en, /3D DGPS fix/);
+  await ctx.clock.advance(INTERVALS.STATUS_MIN_GAP_MS);
+  assert.match(lastStatus(ctx.gladys).message.en, /position fixed/);
 });
 
 test('a TPV without speed, altitude nor error publishes none of them (never 0)', async (t) => {
@@ -91,6 +95,7 @@ test('no fix: the mode is published, never a position; mode 0 publishes nothing'
   assert.equal(statesOf(ctx.gladys, FEATURES.FIX).at(-1).text, 'no fix');
   assert.equal(statesOf(ctx.gladys, FEATURES.LATITUDE).length, 0);
   assert.equal(statesOf(ctx.gladys, FEATURES.SPEED).length, 0);
+  await ctx.clock.advance(INTERVALS.STATUS_MIN_GAP_MS);
   assert.match(lastStatus(ctx.gladys).message.en, /no fix yet/);
 });
 
@@ -399,6 +404,7 @@ test('the configured receiver is followed, the others listed', async (t) => {
   await ctx.clock.advance(0);
   await tick();
   assert.equal(ctx.gladys.fake.states.length, 0);
+  await ctx.clock.advance(INTERVALS.STATUS_MIN_GAP_MS);
   assert.match(
     lastStatus(ctx.gladys).message.en,
     /nothing from \/dev\/ttyUSB1; gpsd reports \/dev\/ttyACM0/,
@@ -450,6 +456,7 @@ test('the followed receiver unplugged: its last fix is dropped, status says it',
   socket.send(tpv({ lat: 47 }));
   socket.send({ class: 'DEVICE', path: PATH });
   await tick();
+  await ctx.clock.advance(INTERVALS.STATUS_MIN_GAP_MS);
   assert.match(lastStatus(ctx.gladys).message.en, /no active receiver/);
   await ctx.clock.advance(2 * MINUTE);
   await tick();
@@ -463,6 +470,7 @@ test('gpsd without any receiver: said in the status', async (t) => {
   socket.open();
   socket.send(devices([]));
   await tick();
+  await ctx.clock.advance(INTERVALS.STATUS_MIN_GAP_MS);
   assert.match(lastStatus(ctx.gladys).message.en, /no active receiver/);
 });
 
@@ -476,7 +484,9 @@ test('one status per state', async (t) => {
     await ctx.clock.advance(SECOND);
   }
   await tick();
-  const fixes = ctx.gladys.fake.connectionStatuses.filter((s) => /fix\./.test(s.message?.en));
+  const fixes = ctx.gladys.fake.connectionStatuses.filter((s) =>
+    /position fixed/.test(s.message?.en),
+  );
   assert.equal(fixes.length, 1);
 });
 
@@ -673,4 +683,196 @@ test('a published device keeps the features of the created one', async (t) => {
   t.after(() => ctx.app.stop());
   const [published] = ctx.gladys.fake.discoveredDevices;
   assert.ok(published.features.some((f) => f.external_id === F('old_feature')));
+});
+
+test('a fix that comes and goes 10 times a second: statuses bounded', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const socket = await watching(ctx);
+  const before = ctx.gladys.fake.connectionStatuses.length;
+  for (let i = 0; i < 600; i += 1) {
+    socket.send(tpv({ mode: i % 2 ? 1 : 3, status: i % 3 === 0 ? 2 : undefined }));
+    await ctx.clock.advance(100);
+  }
+  await ctx.clock.advance(INTERVALS.STATUS_MIN_GAP_MS);
+  await tick();
+  const sent = ctx.gladys.fake.connectionStatuses.length - before;
+  assert.ok(sent <= 8, `${sent} statuses in a minute`);
+  assert.ok(sent >= 1);
+  assert.deepEqual(ctx.badTimers, []);
+});
+
+test('the course and speed of an epoch are never lost to a partial TPV', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const socket = await watching(ctx);
+  // gpsd 3.25: per epoch, a TPV without track nor speed, then the full one.
+  // The round always falls right after the partial one.
+  for (let epoch = 0; epoch < 3 * 60; epoch += 1) {
+    socket.send(tpv({ track: 90 + epoch, speed: 10 + epoch / 10 }));
+    await ctx.clock.advance(500);
+    socket.send(tpv({ track: undefined, speed: undefined, eph: undefined }));
+    await ctx.clock.advance(500);
+  }
+  await tick();
+  const courses = statesOf(ctx.gladys, FEATURES.COURSE).map((s) => s.state);
+  const speeds = statesOf(ctx.gladys, FEATURES.SPEED);
+  assert.ok(courses.length >= 3, `courses ${courses}`);
+  assert.ok(speeds.length >= 3);
+  assert.equal(
+    statesOf(ctx.gladys, FEATURES.HORIZONTAL_ERROR).length,
+    1,
+    'same value, deduplicated',
+  );
+});
+
+test('a value is carried 3 s at most, never across a loss of fix, never the altitude in 2D', async (t) => {
+  const ctx = await setup({ config: { ...CONFIG, publish_interval: '10' } });
+  t.after(() => ctx.app.stop());
+  const socket = await watching(ctx);
+  socket.send(tpv({ track: 200, speed: 20 }));
+  await ctx.clock.advance(10 * SECOND);
+  socket.send(tpv({ lat: 1, track: undefined, speed: undefined, eph: undefined }));
+  await ctx.clock.advance(10 * SECOND);
+  await tick();
+  assert.equal(statesOf(ctx.gladys, FEATURES.COURSE).length, 1, 'too old: not carried');
+  socket.send(tpv({ track: 210, speed: 20 }));
+  socket.send(tpv({ mode: 1 }));
+  socket.send(tpv({ lat: 2, track: undefined, speed: undefined, altMSL: undefined }));
+  await ctx.clock.advance(10 * SECOND);
+  await tick();
+  assert.deepEqual(
+    statesOf(ctx.gladys, FEATURES.COURSE).map((s) => s.state),
+    [200],
+    'not across a loss of fix',
+  );
+  socket.send(tpv({ altMSL: 500 }));
+  socket.send(tpv({ mode: 2, lat: 3, altMSL: undefined }));
+  await ctx.clock.advance(10 * SECOND);
+  await tick();
+  assert.ok(
+    !statesOf(ctx.gladys, FEATURES.ALTITUDE).some((s) => s.state === 500),
+    'no altitude in 2D',
+  );
+});
+
+test('a gpsd that closes after the banner: retries doubling, reset after a minute watching', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const delays = [];
+  let socket = ctx.connect.last();
+  for (let i = 0; i < 6; i += 1) {
+    socket.open();
+    await tick();
+    assert.equal(socket.writes[0], '?WATCH={"enable":true,"json":true};\n', 'watching');
+    socket.fail('ECONNRESET');
+    await tick();
+    const start = ctx.clock.elapsed;
+    const before = ctx.connect.sockets.length;
+    while (ctx.connect.sockets.length === before) await ctx.clock.advance(SECOND);
+    delays.push(Math.round((ctx.clock.elapsed - start) / SECOND));
+    socket = ctx.connect.last();
+  }
+  assert.deepEqual(delays, [5, 10, 20, 40, 80, 160]);
+  socket.open();
+  await ctx.clock.advance(INTERVALS.STABLE_MS - 2 * SECOND);
+  socket.send(VERSION);
+  socket.fail('ECONNRESET');
+  await tick();
+  assert.match(
+    lastStatus(ctx.gladys).message.en,
+    /Next try in 300 s/,
+    'under a minute: still doubling',
+  );
+  await ctx.clock.advance(INTERVALS.RETRY_MAX_MS);
+  socket = ctx.connect.last();
+  socket.open();
+  await ctx.clock.advance(INTERVALS.STABLE_MS + SECOND);
+  socket.send(VERSION);
+  socket.fail('ECONNRESET');
+  await tick();
+  assert.match(lastStatus(ctx.gladys).message.en, /Next try in 5 s/);
+});
+
+test('the first receiver that reports is released when gpsd deactivates it', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const socket = await watching(ctx);
+  socket.send(tpv({ lat: 1 }));
+  await ctx.clock.advance(0);
+  socket.send(tpv({ device: '/dev/ttyUSB0', lat: 2 }));
+  // gpsd 3.25 says "removed" with a number, not an absent attribute.
+  socket.send({ class: 'DEVICE', path: PATH, activated: 0 });
+  socket.send(tpv({ device: '/dev/ttyUSB0', lat: 3 }));
+  await ctx.clock.advance(MINUTE);
+  await tick();
+  assert.equal(valueOf(ctx.gladys, FEATURES.LATITUDE), 3);
+});
+
+test('Gladys back: the next fresh report is published whole again', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const socket = await watching(ctx);
+  socket.send(tpv());
+  await ctx.clock.advance(0);
+  await tick();
+  const count = statesOf(ctx.gladys, FEATURES.LATITUDE).length;
+  await ctx.gladys.disconnect();
+  await ctx.gladys.connect();
+  await tick();
+  socket.send(tpv());
+  await ctx.clock.advance(MINUTE);
+  await tick();
+  assert.equal(statesOf(ctx.gladys, FEATURES.LATITUDE).length, count + 1);
+});
+
+test('every published value lies within the min and max of its feature, at every precision', async () => {
+  const ctx = await setup({ connected: false });
+  const ids = { feature: (key) => `x:${key}` };
+  const device = buildDevice(ctx.gladys, { host: 'gps.lan', port: 2947 });
+  const range = Object.fromEntries(
+    device.features.map((f) => [f.external_id.split(':').at(-1), f]),
+  );
+  const extremes = [];
+  for (const lat of [-90, -89.999999, 0, 89.999999, 90]) {
+    for (const lon of [-180, 179.999999, 180]) {
+      for (const [speed, track, alt, eph] of [
+        [0, 0, LIMITS.ALTITUDE_MIN, 0],
+        [LIMITS.SPEED_MAX, 359.9, LIMITS.ALTITUDE_MAX, LIMITS.HORIZONTAL_ERROR_MAX],
+        [0.6, 359.5, -999.95, 0.04],
+      ]) {
+        extremes.push(readTpv(tpv({ lat, lon, speed, track, altMSL: alt, eph })));
+      }
+    }
+  }
+  extremes.push(readTpv(tpv({ mode: 1 })), readTpv(tpv({ mode: 2 })));
+  const skies = [readSky(sky(0, 0)), readSky(sky(256, 300))];
+  for (const decimals of [5, 4, 3, 2]) {
+    for (const [i, one] of extremes.entries()) {
+      for (const state of buildStates(ids, { tpv: one, sky: skies[i % 2] }, decimals)) {
+        const key = state.device_feature_external_id.slice(2);
+        const feature = range[key];
+        if (state.text !== undefined) continue;
+        assert.ok(
+          state.state >= feature.min && state.state <= feature.max,
+          `${key} ${state.state} out of ${feature.min}..${feature.max}`,
+        );
+      }
+    }
+  }
+});
+
+test('2D, 3D and DGPS alternating for 5 minutes: one "fixed" status only', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const socket = await watching(ctx);
+  socket.send(tpv());
+  await ctx.clock.advance(INTERVALS.STATUS_MIN_GAP_MS);
+  const before = ctx.gladys.fake.connectionStatuses.length;
+  for (let i = 0; i < 300; i += 1) {
+    socket.send(tpv({ mode: 2 + (i % 2), status: i % 3 === 0 ? 2 : undefined }));
+    await ctx.clock.advance(SECOND);
+  }
+  await tick();
+  assert.equal(ctx.gladys.fake.connectionStatuses.length, before);
 });

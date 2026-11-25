@@ -56,7 +56,15 @@ to date at the end of every milestone.
   everything again (the SDK remembers only what Gladys accepted).
 - **Test button**: tells the current state; never opens a connection (never
   faster than the retry pace), never a coordinate.
-- **CI**: `timeout-minutes: 30` added to both jobs of `ci.yml`.
+- **CI**: `timeout-minutes` on every job (30 min, 60 for the multi-arch build).
+- **Review r1** (2026-11-25): the status key holds no fix kind and a watching
+  status is sent at most every 10 s (`STATUS_MIN_GAP_MS`), failures at once;
+  TPV values merged per field within 3 s of the same fix (`TPV_CARRY_MS`,
+  never the status, the altitude only in 3D, lat/lon together); the "first
+  that reports" receiver is released by its DEVICE `activated` absent or 0;
+  altitude and course without history by default. Equivalent mutant left
+  out: the key check of `setStatus` (`refreshStatus` already compares the key,
+  failure keys carry their count).
 
 ## Next
 

@@ -28,14 +28,30 @@ Un appareil par adresse de gpsd (onglet Découverte), en lecture seule :
 | Satellites vus      | nombre                                                     |
 
 Une valeur que gpsd ne donne pas reste inconnue (jamais 0). Sans fix, seuls le
-mode et le texte du fix sont publiés, jamais une position.
+mode et le texte du fix sont publiés, jamais une position : Gladys continue
+d'afficher les dernières position, vitesse, altitude et cap reçues, avec leur
+date (une intégration ne peut pas effacer une valeur). Sous 2 km/h, le cap n'est
+pas mis à jour. gpsd envoie plusieurs rapports par seconde, certains sans le cap
+ni la vitesse : une valeur absente du plus récent est reprise d'un rapport du
+même fix vieux de 3 secondes au plus.
 
 ## Avant de commencer
 
 - gpsd doit écouter sur le réseau : lancez-le avec `-G` (sur Debian,
-  `GPSD_OPTIONS="-G"` dans `/etc/default/gpsd`, et pour un gpsd activé par
-  socket `ListenStream=0.0.0.0:2947` dans `gpsd.socket`). Vérifiez avec
-  `gpspipe -w <adresse>` depuis une autre machine.
+  `GPSD_OPTIONS="-G"` dans `/etc/default/gpsd`). Un gpsd activé par socket
+  demande aussi `sudo systemctl edit gpsd.socket` avec les lignes ci-dessous
+  (la ligne `ListenStream=` vide efface d'abord les adresses locales), puis
+  `sudo systemctl restart gpsd.socket gpsd` :
+
+  ```ini
+  [Socket]
+  ListenStream=
+  ListenStream=/run/gpsd.sock
+  ListenStream=0.0.0.0:2947
+  ```
+
+  Vérifiez avec `gpspipe -w <adresse>` depuis une autre machine.
+
 - Le port TCP 2947 (ou le vôtre) doit être joignable depuis Gladys. gpsd n'a
   pas de mot de passe : gardez-le sur votre réseau local, ne l'ouvrez pas sur
   internet.
@@ -46,7 +62,9 @@ mode et le texte du fix sont publiés, jamais une position.
   n'est pas 2947 (IPv6 entre crochets : `[fd00::12]:2947`).
 - **Récepteur** (facultatif) : seulement si gpsd lit plusieurs récepteurs, le
   chemin de celui à suivre tel que gpsd le nomme (`/dev/ttyACM0`). Vide : le
-  premier qui envoie un rapport. Le statut liste les autres.
+  premier qui envoie un rapport ; si gpsd le désactive, le suivant qui envoie
+  un rapport est suivi. Le bouton de test liste les autres récepteurs vus ; le
+  statut ne les nomme que si le récepteur choisi n'envoie rien.
 - **Publication** : gpsd envoie environ un rapport par seconde ; l'intégration
   garde le plus récent et publie au plus toutes les 10 s, 30 s, 1 min (par
   défaut), 5 min ou 15 min, seulement les valeurs qui ont changé (une valeur
@@ -59,19 +77,22 @@ mode et le texte du fix sont publiés, jamais une position.
 
 Une position est une donnée personnelle. Elle est arrondie avant d'arriver dans
 Gladys, n'est écrite ni dans les journaux, ni dans le statut, ni dans la réponse
-du bouton de test. Latitude, longitude et texte du fix sont gardés sans
-historique par défaut ; vous pouvez l'activer fonction par fonction dans
-Gladys.
+du bouton de test. Latitude, longitude, altitude, cap et texte du fix sont
+gardés sans historique par défaut (ensemble, ils dessineraient vos trajets) ;
+vitesse, erreur horizontale, mode du fix et satellites le gardent. Vous pouvez
+le changer fonction par fonction dans Gladys.
 
 ## Statut et bouton de test
 
-L'écran de configuration montre l'état de la connexion : connecté avec un fix
-2D / 3D, pas encore de fix, aucun récepteur actif, un récepteur choisi qui
-n'envoie rien, aucun rapport depuis une minute, ou la raison d'un échec (refus,
+L'écran de configuration montre l'état de la connexion : connecté avec une
+position, pas encore de fix, aucun récepteur actif, un récepteur choisi qui
+n'envoie rien (avec les récepteurs que gpsd signale à la place), aucun rapport
+depuis une minute, ou la raison d'un échec (refus,
 nom inconnu, injoignable, pas gpsd, autre version du protocole, gpsd ne répond
-plus). Une connexion perdue est réessayée après 5 s, puis 10, 20... jusqu'à
-5 minutes. Le bouton **Tester la connexion** donne le même état avec les
-satellites et le rythme ; il n'ouvre jamais de nouvelle connexion.
+plus). Connecté, le statut change au plus une fois toutes les 10 secondes (un fix qui
+va et vient n'inonde pas Gladys). Une connexion perdue est réessayée après 5 s, puis 10, 20... jusqu'à
+5 minutes. Le bouton **Tester la connexion** donne le même état avec le type de fix (2D, 3D,
+DGPS...), les satellites et le rythme ; il n'ouvre jamais de nouvelle connexion.
 
 ## Fonctionnement
 

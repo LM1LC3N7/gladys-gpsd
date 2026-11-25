@@ -96,4 +96,8 @@ export const INTERVALS = Object.freeze({
   CONFIG_RETRY_MAX_MS: 5 * 60_000,
   /** An unchanged value is published again once this old (stays dated in Gladys). */
   HEARTBEAT_MS: 3600_000,
+  /** Two statuses of a watching connection are at least this far apart. */
+  STATUS_MIN_GAP_MS: 10_000,
+  /** A TPV value missing from a report is taken from one at most this old (same fix). */
+  TPV_CARRY_MS: 3_000,
 });

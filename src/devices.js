@@ -8,8 +8,9 @@
 //              another port stays the same device.
 //
 // Every feature is read only. The core has no category for coordinates:
-// latitude and longitude are `unknown`/`unknown` without unit, with no history
-// by default (a position is personal data; the user may turn it on).
+// latitude and longitude are `unknown`/`unknown` without unit. Latitude,
+// longitude, altitude, course and the fix text keep no history by default
+// (together they draw a trip; the user may turn it on).
 //
 // A device published again never loses a feature: the features of the device
 // created in Gladys (`gladys.devices`) are added back when the blueprint lacks
@@ -81,19 +82,31 @@ export function buildDevice(gladys, { host, port }) {
       min: 0,
       max: Math.round(LIMITS.SPEED_MAX * 3.6),
     }),
-    feature(ids, FEATURES.ALTITUDE, 'Altitude', {
-      category: C.DISTANCE_SENSOR,
-      type: T.SENSOR.DECIMAL,
-      unit: U.M,
-      min: LIMITS.ALTITUDE_MIN,
-      max: LIMITS.ALTITUDE_MAX,
-    }),
-    feature(ids, FEATURES.COURSE, 'Course', {
-      category: C.ANGLE_SENSOR,
-      type: T.SENSOR.INTEGER,
-      min: 0,
-      max: 359,
-    }),
+    feature(
+      ids,
+      FEATURES.ALTITUDE,
+      'Altitude',
+      {
+        category: C.DISTANCE_SENSOR,
+        type: T.SENSOR.DECIMAL,
+        unit: U.M,
+        min: LIMITS.ALTITUDE_MIN,
+        max: LIMITS.ALTITUDE_MAX,
+      },
+      false,
+    ),
+    feature(
+      ids,
+      FEATURES.COURSE,
+      'Course',
+      {
+        category: C.ANGLE_SENSOR,
+        type: T.SENSOR.INTEGER,
+        min: 0,
+        max: 359,
+      },
+      false,
+    ),
     // 1 no fix, 2 2D, 3 3D (gpsd `mode`); 0 "unknown" is never published.
     feature(ids, FEATURES.FIX_MODE, 'Fix mode', {
       category: C.UNKNOWN,

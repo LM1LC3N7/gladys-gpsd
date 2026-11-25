@@ -116,14 +116,14 @@
   {
     "name": "app: reports kept after the end",
     "file": "src/app.js",
-    "from": "    this.clearTimer('publishTimer');\n    this.resetReports();\n    this.failures = lived",
-    "to": "    this.clearTimer('publishTimer');\n    this.failures = lived"
+    "from": "    this.clearTimer('statusTimer');\n    this.resetReports();\n    this.failures = lived",
+    "to": "    this.clearTimer('statusTimer');\n    this.failures = lived"
   },
   {
     "name": "app: reports kept after a target change",
     "file": "src/app.js",
-    "from": "    this.clearTimer('publishTimer');\n    this.resetReports();\n  }\n",
-    "to": "    this.clearTimer('publishTimer');\n  }\n"
+    "from": "    this.clearTimer('statusTimer');\n    this.resetReports();\n  }\n",
+    "to": "    this.clearTimer('statusTimer');\n  }\n"
   },
   {
     "name": "app: backoff never reset",
@@ -146,7 +146,7 @@
   {
     "name": "app: mode 0 published",
     "file": "src/app.js",
-    "from": "if (tpv.mode === MODES.UNKNOWN) return;",
+    "from": "        if (tpv.mode === MODES.UNKNOWN) {\n          this.refreshStatus();\n          return;\n        }\n",
     "to": ""
   },
   {
@@ -170,14 +170,8 @@
   {
     "name": "app: stop leaves the retry",
     "file": "src/app.js",
-    "from": "    this.clearTimer('configTimer');\n    this.clearTimer('retryTimer');\n    this.clearTimer('publishTimer');\n    this.stopSession();\n    await",
-    "to": "    this.clearTimer('configTimer');\n    this.clearTimer('publishTimer');\n    this.stopSession();\n    await"
-  },
-  {
-    "name": "app: a status per message",
-    "file": "src/app.js",
-    "from": "if (this.status.key === key) return;",
-    "to": ""
+    "from": "    this.clearTimer('configTimer');\n    this.clearTimer('retryTimer');\n    this.clearTimer('publishTimer');",
+    "to": "    this.clearTimer('configTimer');\n    this.clearTimer('publishTimer');"
   },
   {
     "name": "app: partial SKY erases the count",
@@ -196,5 +190,95 @@
     "file": "src/config.js",
     "from": " || /[\"\\\\]/.test(raw)",
     "to": ""
+  },
+  {
+    "name": "status: no floor",
+    "file": "src/app.js",
+    "from": "if (since >= INTERVALS.STATUS_MIN_GAP_MS || !this.status.key?.startsWith('w:')) {",
+    "to": "if (true) {"
+  },
+  {
+    "name": "status: fix kind in the key",
+    "file": "src/app.js",
+    "from": "return { key: 'w:fix', message: T.fix(release) };",
+    "to": "return { key: `w:fix:${this.lastTpv.mode}:${this.lastTpv.status}`, message: T.fix(release) };"
+  },
+  {
+    "name": "tpv: not merged",
+    "file": "src/app.js",
+    "from": "        this.pendingTpv = merged.tpv;",
+    "to": "        this.pendingTpv = tpv;"
+  },
+  {
+    "name": "tpv: carried without age",
+    "file": "src/report.js",
+    "from": "      mono - prev.at[key] <= maxAgeMs &&\n",
+    "to": ""
+  },
+  {
+    "name": "tpv: carried across a loss of fix",
+    "file": "src/report.js",
+    "from": "const carry = prev && prev.tpv.mode >= MODES.FIX_2D && next.mode >= MODES.FIX_2D;",
+    "to": "const carry = Boolean(prev);"
+  },
+  {
+    "name": "tpv: altitude carried in 2D",
+    "file": "src/report.js",
+    "from": "      !(key === 'alt' && next.mode !== MODES.FIX_3D)\n",
+    "to": "      true\n"
+  },
+  {
+    "name": "app: stability ignored",
+    "file": "src/app.js",
+    "from": "mono - this.watchingSince >= INTERVALS.STABLE_MS",
+    "to": "mono - this.watchingSince >= 0"
+  },
+  {
+    "name": "app: first receiver never released",
+    "file": "src/app.js",
+    "from": "            this.lockedPath = null;\n",
+    "to": ""
+  },
+  {
+    "name": "app: forget on reconnection removed",
+    "file": "src/app.js",
+    "from": "    this.gladys.forgetPublishedStates?.();\n",
+    "to": ""
+  },
+  {
+    "name": "parse: used above seen kept",
+    "file": "src/gpsd/parse.js",
+    "from": "  if (used !== null && seen !== null && used > seen) seen = used;\n",
+    "to": ""
+  },
+  {
+    "name": "parse: alt before altMSL",
+    "file": "src/gpsd/parse.js",
+    "from": "const altRaw = isNumber(obj.altMSL) ? obj.altMSL : obj.alt;",
+    "to": "const altRaw = isNumber(obj.alt) ? obj.alt : obj.altMSL;"
+  },
+  {
+    "name": "devices: latitude max",
+    "file": "src/devices.js",
+    "from": "{ category: C.UNKNOWN, type: T.UNKNOWN.UNKNOWN, min: -90, max: 90 }",
+    "to": "{ category: C.UNKNOWN, type: T.UNKNOWN.UNKNOWN, min: -90, max: 45 }"
+  },
+  {
+    "name": "devices: course max",
+    "file": "src/devices.js",
+    "from": "      max: 359,\n",
+    "to": "      max: 90,\n"
+  },
+  {
+    "name": "devices: fix mode max",
+    "file": "src/devices.js",
+    "from": "      min: 1,\n      max: 3,\n",
+    "to": "      min: 1,\n      max: 2,\n"
+  },
+  {
+    "name": "devices: speed max",
+    "file": "src/devices.js",
+    "from": "max: Math.round(LIMITS.SPEED_MAX * 3.6),",
+    "to": "max: 100,"
   }
 ]

@@ -27,14 +27,30 @@ One device per gpsd address (Discovery tab), read only:
 | Satellites seen  | count                                                    |
 
 A value gpsd does not give stays unknown (never 0). Without a fix, only the fix
-mode and the fix text are published, never a position.
+mode and the fix text are published, never a position: Gladys keeps showing the
+last position, speed, altitude and course received, with their date (an
+integration cannot erase a value). Below 2 km/h the course is not updated.
+gpsd sends several reports per second, some without the course or the speed:
+a value missing from the newest one is taken from a report of the same fix at
+most 3 seconds old.
 
 ## Before you start
 
 - gpsd must listen on the network: start it with `-G` (on Debian, set
-  `GPSD_OPTIONS="-G"` in `/etc/default/gpsd`, and for a socket-activated gpsd
-  `ListenStream=0.0.0.0:2947` in `gpsd.socket`). Check with
-  `gpspipe -w <address>` from another machine.
+  `GPSD_OPTIONS="-G"` in `/etc/default/gpsd`). A socket-activated gpsd also
+  needs `sudo systemctl edit gpsd.socket` with the lines below (the empty
+  `ListenStream=` clears the local-only addresses first), then
+  `sudo systemctl restart gpsd.socket gpsd`:
+
+  ```ini
+  [Socket]
+  ListenStream=
+  ListenStream=/run/gpsd.sock
+  ListenStream=0.0.0.0:2947
+  ```
+
+  Check with `gpspipe -w <address>` from another machine.
+
 - TCP port 2947 (or yours) must be reachable from Gladys. gpsd has no
   password: keep it on your local network, never open it to the internet.
 
@@ -44,7 +60,9 @@ mode and the fix text are published, never a position.
   2947 (IPv6 in brackets: `[fd00::12]:2947`).
 - **Receiver** (optional): only if gpsd reads several receivers, the path of
   the one to follow as gpsd names it (`/dev/ttyACM0`). Empty: the first one that
-  reports. The status lists the others.
+  reports; if gpsd deactivates it, the next one that reports is followed. The
+  test button lists the other receivers seen; the status names them only when
+  the configured receiver sends nothing.
 - **Publication**: gpsd reports about once a second; the integration keeps the
   newest report and publishes at most every 10 s, 30 s, 1 min (default), 5 min
   or 15 min, only the values that changed (an unchanged value is sent again
@@ -57,18 +75,20 @@ mode and the fix text are published, never a position.
 
 A position is personal data. It is rounded before it reaches Gladys, never
 written in the logs, the status nor the answer of the test button. Latitude,
-longitude and the fix text keep no history by default; you may turn history
-on for each feature in Gladys.
+longitude, altitude, course and the fix text keep no history by default
+(together they would draw your trips); speed, horizontal error, fix mode and
+satellites keep it. You may change this for each feature in Gladys.
 
 ## Status and test button
 
 The Configuration screen shows the state of the connection: connected with a
-2D / 3D fix, no fix yet, no active receiver, a configured receiver that sends
-nothing, no report for a minute, or the reason of a failure (refused, unknown
+fix, no fix yet, no active receiver, a configured receiver that sends nothing
+(with the receivers gpsd reports instead), no report for a minute, or the reason of a failure (refused, unknown
 name, unreachable, not gpsd, another protocol version, gpsd stopped answering).
-A lost connection is tried again after 5 s, then 10, 20... up to 5 minutes. The
-**Test the connection** button tells the same state with the satellites and the
-pace; it never opens a new connection.
+While connected, the status changes at most once every 10 seconds (a fix that
+comes and goes does not flood Gladys). A lost connection is tried again after 5 s, then 10, 20... up to 5 minutes. The
+**Test the connection** button tells the same state with the kind of fix (2D,
+3D, DGPS...), the satellites and the pace; it never opens a new connection.
 
 ## How it works
 

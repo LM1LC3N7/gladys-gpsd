@@ -21,6 +21,44 @@ export function roundTo(value, decimals) {
   return rounded === 0 ? 0 : Math.sign(value) * rounded;
 }
 
+/** The values of a TPV taken from an earlier one of the same fix when missing. */
+const CARRIED = ['lat', 'lon', 'alt', 'speed', 'track', 'eph'];
+
+/**
+ * Merges a TPV into the last one (pure). `prev` is `{ tpv, at }`, `at` the
+ * monotonic time each value was last given. A value the new TPV lacks is kept
+ * from `prev` when given within `maxAgeMs` and both are 2D/3D fixes; the
+ * altitude only in 3D; latitude and longitude only together. The status is
+ * never carried (absent means "normal" in gpsd). -> { tpv, at }.
+ */
+export function mergeTpv(prev, next, mono, maxAgeMs) {
+  const at = {};
+  const tpv = { ...next };
+  const carry = prev && prev.tpv.mode >= MODES.FIX_2D && next.mode >= MODES.FIX_2D;
+  for (const key of CARRIED) {
+    if (next[key] !== null) {
+      at[key] = mono;
+    } else if (
+      carry &&
+      prev.tpv[key] !== null &&
+      prev.at?.[key] != null &&
+      mono - prev.at[key] <= maxAgeMs &&
+      !(key === 'alt' && next.mode !== MODES.FIX_3D)
+    ) {
+      tpv[key] = prev.tpv[key];
+      at[key] = prev.at[key];
+    } else {
+      tpv[key] = null;
+      at[key] = null;
+    }
+  }
+  if (tpv.lat === null || tpv.lon === null) {
+    tpv.lat = null;
+    tpv.lon = null;
+  }
+  return { tpv, at };
+}
+
 /** The text of the Fix feature: `no fix`, `2D`, `3D`, `3D DGPS`... */
 export function fixText(mode, status) {
   if (mode === MODES.NO_FIX) return 'no fix';

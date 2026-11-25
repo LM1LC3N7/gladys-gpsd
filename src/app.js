@@ -21,7 +21,7 @@ import { buildDevice, deviceIds, receiverKey } from './devices.js';
 import { T, join } from './i18n.js';
 import { readDevice, readDevices, readError, readSky, readTpv } from './gpsd/parse.js';
 import { GpsdSession } from './gpsd/session.js';
-import { buildStates, fixText } from './report.js';
+import { buildStates, fixText, mergeTpv } from './report.js';
 
 const quietLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -56,10 +56,11 @@ export class GpsdApp {
     this.retryAt = null;
     this.configTimer = null;
     this.publishTimer = null;
+    this.statusTimer = null;
     this.publishing = false;
     this.lastPublishAt = null;
     this.lastReason = null;
-    this.status = { key: null, chain: Promise.resolve() };
+    this.status = { key: null, at: null, chain: Promise.resolve() };
     this.resetReports();
   }
 
@@ -152,6 +153,7 @@ export class GpsdApp {
     this.clearTimer('configTimer');
     this.clearTimer('retryTimer');
     this.clearTimer('publishTimer');
+    this.clearTimer('statusTimer');
     this.stopSession();
     await this.status.chain;
   }
@@ -197,6 +199,7 @@ export class GpsdApp {
     this.otherPaths = new Set();
     this.receivers = new Map();
     this.lastTpv = null;
+    this.tpvAt = null;
     this.lastSky = null;
     this.pendingTpv = null;
     this.pendingSky = null;
@@ -230,6 +233,7 @@ export class GpsdApp {
     this.session?.close();
     this.session = null;
     this.clearTimer('publishTimer');
+    this.clearTimer('statusTimer');
     this.resetReports();
   }
 
@@ -248,6 +252,7 @@ export class GpsdApp {
     const lived = this.watchingSince !== null && mono - this.watchingSince >= INTERVALS.STABLE_MS;
     this.session = null;
     this.clearTimer('publishTimer');
+    this.clearTimer('statusTimer');
     this.resetReports();
     this.failures = lived ? 1 : this.failures + 1;
     this.lastReason = reason;
@@ -291,9 +296,22 @@ export class GpsdApp {
         }
         this.silent = false;
         // A mode 0 says nothing: kept for nothing, published as nothing.
-        if (tpv.mode === MODES.UNKNOWN) return;
-        this.lastTpv = tpv;
-        this.pendingTpv = tpv;
+        if (tpv.mode === MODES.UNKNOWN) {
+          this.refreshStatus();
+          return;
+        }
+        // gpsd sends several TPV per epoch, some without the course or the
+        // speed: a value missing from this one is taken from the reports of
+        // the last TPV_CARRY_MS of the same fix (never across a loss of fix).
+        const merged = mergeTpv(
+          this.lastTpv ? { tpv: this.lastTpv, at: this.tpvAt } : null,
+          tpv,
+          this.monotonic(),
+          INTERVALS.TPV_CARRY_MS,
+        );
+        this.lastTpv = merged.tpv;
+        this.tpvAt = merged.at;
+        this.pendingTpv = merged.tpv;
         this.schedulePublish();
         this.refreshStatus();
         return;
@@ -330,7 +348,13 @@ export class GpsdApp {
         // The followed receiver went away (unplugged): its last fix is no
         // longer the state of anything, and nothing of it is published.
         if (!device.active && device.path === (this.config.receiver ?? this.lockedPath)) {
+          // Without a configured receiver, the next one that reports is followed.
+          if (!this.config.receiver) {
+            this.lockedPath = null;
+            this.otherPaths.clear();
+          }
           this.lastTpv = null;
+          this.tpvAt = null;
           this.lastSky = null;
           this.pendingTpv = null;
           this.pendingSky = null;
@@ -390,32 +414,59 @@ export class GpsdApp {
   setStatus(key, connected, message) {
     if (this.status.key === key) return;
     this.status.key = key;
+    this.status.at = this.monotonic();
     this.status.chain = this.status.chain
       .then(() => this.gladys.setConnectionStatus(connected, message))
       .catch((err) => this.logger.warn(`Status not sent: ${err?.message ?? err}`));
   }
 
-  /** The status of a watching connection, from what gpsd reported. */
+  /**
+   * The status of a watching connection, from what gpsd reported, at most one
+   * per INTERVALS.STATUS_MIN_GAP_MS (a fix that comes and goes ten times a
+   * second sends one status, then the state of the end of the gap). The
+   * connection failures are not delayed (their pace is the retries').
+   */
   refreshStatus() {
     if (!this.session || !this.version) return;
+    const wanted = this.watchingStatus();
+    if (wanted.key === this.status.key) return;
+    const mono = this.monotonic();
+    const since = this.status.at === null ? Infinity : mono - this.status.at;
+    if (since >= INTERVALS.STATUS_MIN_GAP_MS || !this.status.key?.startsWith('w:')) {
+      this.clearTimer('statusTimer');
+      this.setStatus(wanted.key, true, wanted.message);
+      return;
+    }
+    if (this.statusTimer !== null) return;
+    const wait = Math.min(
+      INTERVALS.STATUS_MIN_GAP_MS,
+      Math.max(0, INTERVALS.STATUS_MIN_GAP_MS - since),
+    );
+    this.statusTimer = this.timers.setTimeout(() => {
+      this.statusTimer = null;
+      if (!this.stopped) this.refreshStatus();
+    }, wait);
+  }
+
+  /** The watching status: { key (prefixed `w:`), message }. */
+  watchingStatus() {
     const release = this.version.release ?? '';
     const wanted = this.config.receiver ?? this.lockedPath;
     const others = [...this.otherPaths].join(', ');
     const anyActive = [...this.receivers.values()].some(Boolean);
-    if (this.silent) {
-      this.setStatus('silent', true, T.silent(release));
-    } else if (this.lastTpv && this.lastTpv.mode >= MODES.FIX_2D) {
-      const fix = fixText(this.lastTpv.mode, this.lastTpv.status);
-      this.setStatus(`fix:${fix}`, true, T.fix(release, fix));
-    } else if (this.lastTpv) {
-      this.setStatus('nofix', true, T.noFix(release));
-    } else if (this.config.receiver && others) {
-      this.setStatus(`notseen:${others}`, true, T.receiverNotSeen(release, wanted, others));
-    } else if (this.sawDevices && !anyActive) {
-      this.setStatus('noreceiver', true, T.noReceiver(release));
-    } else {
-      this.setStatus('waiting', true, T.waiting(release));
+    // The kind of fix (2D, 3D, DGPS) is never in the status: it may change
+    // every second. The test button tells it.
+    if (this.silent) return { key: 'w:silent', message: T.silent(release) };
+    if (this.lastTpv && this.lastTpv.mode >= MODES.FIX_2D) {
+      return { key: 'w:fix', message: T.fix(release) };
     }
+    if (this.lastTpv) return { key: 'w:nofix', message: T.noFix(release) };
+    if (this.config.receiver && others) {
+      return { key: `w:notseen:${others}`, message: T.receiverNotSeen(release, wanted, others) };
+    }
+    if (this.sawDevices && !anyActive)
+      return { key: 'w:noreceiver', message: T.noReceiver(release) };
+    return { key: 'w:waiting', message: T.waiting(release) };
   }
 
   /** The answer of the test button: the state of the connection, never a coordinate. */
@@ -428,7 +479,7 @@ export class GpsdApp {
     if (this.session && this.version) {
       const release = this.version.release ?? '';
       if (this.lastTpv && this.lastTpv.mode >= MODES.FIX_2D) {
-        parts.push(T.fix(release, fixText(this.lastTpv.mode, this.lastTpv.status)));
+        parts.push(T.fixKind(release, fixText(this.lastTpv.mode, this.lastTpv.status)));
       } else if (this.lastTpv) {
         parts.push(T.noFix(release));
       } else {

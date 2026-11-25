@@ -73,7 +73,11 @@ export const T = {
     en: `Not connected: ${(REASONS[reason] ?? REASONS.error).en}. Next try in ${seconds(ms)} s.`,
     fr: `Non connecté : ${(REASONS[reason] ?? REASONS.error).fr}. Nouvel essai dans ${seconds(ms)} s.`,
   }),
-  fix: (release, fix) => ({
+  fix: (release) => ({
+    en: `Connected to gpsd ${release}: position fixed.`,
+    fr: `Connecté à gpsd ${release} : position trouvée.`,
+  }),
+  fixKind: (release, fix) => ({
     en: `Connected to gpsd ${release}: ${fix} fix.`,
     fr: `Connecté à gpsd ${release} : position ${fix}.`,
   }),
