@@ -77,3 +77,7 @@ to date at the end of every milestone.
       offer to link the receiver to a user.
 - [ ] Speed in knots for boats needs a core unit (`speed-sensor` only knows
       m/s and km/h).
+
+## Next patch
+
+- Review minors: see `_lots/lot25/reviews/gpsd-r3.md` (retour à la ligne du README, lastSky qui mélange deux SKY au bouclage).
